@@ -1,113 +1,187 @@
-import Image from "next/image";
+"use client";
+import Header from "./components/Header";
+import SearchSection from "./components/SearchSection";
+import VideoResults from "./components/VideoResults";
+import { useCallback, useEffect, useState, useTransition } from "react";
+
+import { IVideo } from "./models/IVideo";
+import { IGenre } from "./models/IGenre";
+// import { data } from "./data";
+
+const WithoutGenre = "Without Genre";
+
+const APIs = {
+  getVideos:
+    "https://raw.githubusercontent.com/XiteTV/frontend-coding-exercise/main/data/dataset.json",
+};
+
+const filterVideosByText = (videos: IVideo[], text?: string): IVideo[] => {
+  if (!text) return videos;
+
+  const lowerCaseText = text.toLowerCase();
+
+  return videos.filter((video) => {
+    const hasTitle = video.title && typeof video.title === "string";
+    const hasArtist = video.artist && typeof video.artist === "string";
+
+    const matchesTitle =
+      hasTitle && video.title.toLowerCase().includes(lowerCaseText);
+    const matchesArtist =
+      hasArtist && video.artist.toLowerCase().includes(lowerCaseText);
+
+    return matchesTitle || matchesArtist;
+  });
+};
+
+const filterVideosByYear = (videos: IVideo[], year?: number) => {
+  return year ? videos.filter((v) => v.release_year == year) : videos;
+};
+
+const filterVideosByGenres = (
+  videos: IVideo[],
+  allExistGenresIds: number[],
+  selectedGenresId?: number[]
+) => {
+  const withoutAnyGenre = selectedGenresId?.includes(-1);
+  return selectedGenresId?.length
+    ? videos.filter(
+        (v) =>
+          selectedGenresId.includes(v.genre_id) ||
+          (withoutAnyGenre && !allExistGenresIds.includes(v.genre_id))
+      )
+    : videos;
+};
+
+const filterVideos = (
+  videos: IVideo[],
+  allExistGenresIds: number[],
+  queryText?: string,
+  year?: number,
+  genresId?: number[]
+) => {
+  return filterVideosByGenres(
+    filterVideosByYear(filterVideosByText(videos, queryText), year),
+    allExistGenresIds,
+    genresId
+  );
+};
 
 export default function Home() {
+  const [errorMsg, setErrorMsg] = useState("");
+  const [isFetching, setIsFetching] = useState(true);
+  const [videos, setVideos] = useState<IVideo[]>([]);
+  const [genres, setGenres] = useState<IGenre[]>([]);
+  const [selectedYear, setSelectedYear] = useState<number | undefined>();
+  const [selectedGenresIds, setSelectedGenresIds] = useState<number[]>([]);
+  const [selectedQueryText, setSelectedQueryText] = useState("");
+  const [filteredVideos, setFilteredVideos] = useState<IVideo[]>(videos);
+
+  useEffect(() => {
+    const abortController = new AbortController();
+    setIsFetching(true);
+
+    const fetchData = async () => {
+      try {
+        const response = await fetch(APIs.getVideos, {
+          signal: abortController.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error("Network response was not ok");
+        }
+
+        const data = await response.json();
+        const { videos = [], genres = [] } = data;
+        setVideos(videos);
+        setFilteredVideos(videos);
+        setGenres(genres);
+      } catch (error: unknown) {
+        if (error instanceof Error) {
+          if (error.name !== "AbortError") {
+            // Check if the error is not due to the abort
+            setErrorMsg("Error fetching data: " + error.message);
+          }
+        } else {
+          setErrorMsg("An unknown error occurred");
+        }
+      } finally {
+        setIsFetching(false);
+      }
+    };
+
+    fetchData();
+
+    return () => {
+      abortController.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    const filteredResults = filterVideos(
+      videos,
+      genres.map((g) => g.id),
+      selectedQueryText,
+      selectedYear,
+      selectedGenresIds
+    );
+    setFilteredVideos(filteredResults);
+  }, [videos, genres, selectedQueryText, selectedYear, selectedGenresIds]);
+
+  const onSelectGenres = useCallback(
+    (genreNames: string[]) => {
+      const newSelectedGenresIds = [
+        ...(genreNames.includes(WithoutGenre) ? [-1] : []),
+        ...genres
+          .filter((genre) => genreNames.includes(genre.name))
+          .map((g) => g.id),
+      ];
+      setSelectedGenresIds(newSelectedGenresIds);
+    },
+    [genres, setSelectedGenresIds]
+  );
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const value = e.target.value;
+    setSelectedQueryText(value);
+  };
+
+  const filteredVideosByText = filterVideosByText(videos, selectedQueryText);
+
+  const genresNames = [
+    WithoutGenre,
+    ...genres
+      .filter((g) => filteredVideosByText.map((v) => v.genre_id).includes(g.id))
+      .map((genre) => genre.name),
+  ];
+
+  const years = Array.from(new Set(filteredVideos.map((v) => v.release_year)));
+  years.sort((a, b) => a - b);
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">src/app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:size-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
+    <>
+      <Header headerText="Video Browser" />
+      <div className="flex flex-col justify-center items-center">
+        <div className="w-4-6">
+          <SearchSection
+            years={years}
+            setSelectedYear={setSelectedYear}
+            genres={genresNames}
+            setSelectedGenres={onSelectGenres}
+            handleSearchChange={handleSearchChange}
+          />
+          <div className="text-xl p-5 my-5 text-center border-8 border-sky-500">
+            {errorMsg
+              ? errorMsg
+              : isFetching
+              ? "Fetching Data..."
+              : `Total Videos: ${filteredVideos.length}`}
+          </div>
+          {!errorMsg && !isFetching && (
+            <VideoResults videos={filteredVideos} genres={genres} />
+          )}
         </div>
       </div>
-
-      <div className="relative z-[-1] flex place-items-center before:absolute before:h-[300px] before:w-full before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 sm:before:w-[480px] sm:after:w-[240px] before:lg:h-[360px]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
-
-      <div className="mb-32 grid text-center lg:mb-0 lg:w-full lg:max-w-5xl lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-sm opacity-50">
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className="mb-3 text-2xl font-semibold">
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className="m-0 max-w-[30ch] text-balance text-sm opacity-50">
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
+    </>
   );
 }
